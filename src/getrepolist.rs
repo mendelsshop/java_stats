@@ -1,3 +1,11 @@
+#![warn(clippy::pedantic, clippy::nursery, clippy::cargo)]
+#![deny(
+    clippy::use_self,
+    rust_2018_idioms,
+    missing_debug_implementations,
+    clippy::missing_panics_doc
+)]
+
 use std::error::Error;
 
 use reqwest::blocking::Client;
@@ -5,31 +13,37 @@ use reqwest::{Method, header};
 use serde_json::json;
 
 use crate::{config::Config, repolist::GraphQLResponce};
-
-const QUERY: &str = r#"query {
+pub fn request(config: &Config) -> Result<GraphQLResponce, Box<dyn Error>> {
+    let after = config
+        .next_page
+        .as_ref()
+        .map_or(String::new(), |s| format!(r#", after: "{s}""#));
+    let query = format!(
+        r#"query {{
   search(type: REPOSITORY, query: """
   is:public 
   language:java
-  """, last: 50) {
-    repos: edges {
-      repo: node {
-        ... on Repository {
+  """, last: {}{after}
+  ) {{
+    repos: edges {{
+      repo: node {{
+        ... on Repository {{
           url
           nameWithOwner
-          defaultBranchRef {
+          defaultBranchRef {{
             name
-          }
-        }
-      }
-    }
-    pageInfo {
+          }}
+        }}
+      }}
+    }}
+    pageInfo {{
       endCursor
       hasNextPage
-    }
-  }
-}"#;
-
-pub fn request(config: &Config) -> Result<GraphQLResponce, Box<dyn Error>> {
+    }}
+  }}
+}}"#,
+        config.batch
+    );
     let client = Client::new();
     let url = "https://api.github.com/graphql";
     let header = client
@@ -37,7 +51,7 @@ pub fn request(config: &Config) -> Result<GraphQLResponce, Box<dyn Error>> {
         .header(header::AUTHORIZATION, format!("bearer {}", config.token))
         .header(header::USER_AGENT, "me");
     Ok(header
-        .json(&json!({"query": QUERY}))
+        .json(&json!({"query": query}))
         .send()?
         .json::<GraphQLResponce>()?)
 }

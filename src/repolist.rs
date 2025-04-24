@@ -9,7 +9,7 @@ pub struct GraphQLResponce {
 #[serde(rename_all = "camelCase")]
 pub struct Search {
     pub repos: Vec<Repo>,
-    page_info: PageInfo,
+    pub page_info: PageInfo,
 }
 #[derive(Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -36,8 +36,9 @@ pub struct Data {
 #[derive(Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PageInfo {
-    end_cursor: String,
-    has_next_page: bool,
+    // might be optional
+    pub end_cursor: String,
+    pub has_next_page: bool,
 }
 
 #[test]

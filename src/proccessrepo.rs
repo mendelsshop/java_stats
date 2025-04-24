@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fs::{self};
 use std::io::Read;
+use std::path::Path;
 
 use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
@@ -16,7 +17,12 @@ use crate::repolist::RepoData;
 #[derive(Debug)]
 pub struct Repo {
     data: RepoData,
+    files: Vec<File>,
+}
+#[derive(Debug)]
+pub struct File {
     generics_used: Vec<GenericUsage>,
+    path: Box<Path>,
 }
 #[derive(Debug)]
 pub struct GenericUsage {
@@ -37,7 +43,7 @@ pub struct QueryInfo {
 }
 pub fn proccess_repo(config: &Config, repo: RepoData) -> Result<Repo, Box<dyn Error>> {
     let path = get_repo(config, &repo)?;
-    let mut generics_used = vec![];
+    let mut files = vec![];
     let query = Query::new(
         &tree_sitter_java::LANGUAGE.into(),
         "(class_declaration (identifier) @name (type_parameters)) @generic_class",
@@ -46,17 +52,15 @@ pub fn proccess_repo(config: &Config, repo: RepoData) -> Result<Repo, Box<dyn Er
         .capture_index_for_name("generic_class")
         .ok_or("could not find class query")?;
     let query = QueryInfo { query, class };
-    traveserse_and_find(path.path(), &query, &mut generics_used);
-    Ok(Repo {
-        data: repo,
-        generics_used,
-    })
+    traveserse_and_find(path.path(), path.path(), &query, &mut files);
+    Ok(Repo { data: repo, files })
 }
 
 fn traveserse_and_find(
-    path: &std::path::Path,
+    path: &Path,
+    root_path: &Path,
     query: &QueryInfo,
-    generics_used: &mut Vec<GenericUsage>,
+    generics_used: &mut Vec<File>,
 ) {
     if path.is_file() {
         let mut parser = Parser::new();
@@ -70,6 +74,7 @@ fn traveserse_and_find(
             return;
         };
         let mut cursor = QueryCursor::new();
+        let mut usages = vec![];
         cursor
             .matches(&query.query, code.root_node(), contents.as_bytes())
             .filter(|m| m.nodes_for_capture_index(query.class).any(|_| true))
@@ -78,20 +83,27 @@ fn traveserse_and_find(
                 let Ok(name) = m.captures[1].node.utf8_text(contents.as_bytes()) else {
                     return;
                 };
-                generics_used.push(GenericUsage {
+                usages.push(GenericUsage {
                     name: name.to_string(),
                     range: class,
                     kind: DefintionKind::Class,
                 });
             });
+        if !usages.is_empty() {
+            let Ok(path) = path.strip_prefix(root_path) else {
+                return;
+            };
+            generics_used.push(File {
+                generics_used: usages,
+                path: path.to_path_buf().into_boxed_path(),
+            });
+        }
     } else if path.is_dir() {
         let Ok(read_dir) = path.read_dir() else {
             return;
         };
-        for entry in read_dir {
-            if let Ok(entry) = entry {
-                _ = traveserse_and_find(entry.path().as_path(), query, generics_used);
-            }
+        for entry in read_dir.flatten() {
+            traveserse_and_find(entry.path().as_path(), root_path, query, generics_used);
         }
     }
 }
