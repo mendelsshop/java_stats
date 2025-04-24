@@ -14,16 +14,13 @@ use serde_json::json;
 
 use crate::{config::Config, repolist::GraphQLResponce};
 pub fn request(config: &Config) -> Result<GraphQLResponce, Box<dyn Error>> {
-    let after = config
-        .next_page
-        .as_ref()
-        .map_or(String::new(), |s| format!(r#", after: "{s}""#));
+    let after = config.next_page.as_ref().map_or("null", |x| x);
     let query = format!(
         r#"query {{
   search(type: REPOSITORY, query: """
   is:public 
   language:java
-  """, last: {}{after}
+  """, last: {}, after: {after}
   ) {{
     repos: edges {{
       repo: node {{
@@ -42,7 +39,7 @@ pub fn request(config: &Config) -> Result<GraphQLResponce, Box<dyn Error>> {
     }}
   }}
 }}"#,
-        config.batch
+        config.batch_size
     );
     let client = Client::new();
     let url = "https://api.github.com/graphql";

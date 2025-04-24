@@ -4,5 +4,6 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub next_page: Option<String>,
     pub token: String,
-    pub batch: usize,
+    pub batch_size: usize,
+    pub batch_count: usize,
 }

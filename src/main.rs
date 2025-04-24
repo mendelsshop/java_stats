@@ -2,6 +2,8 @@ use std::fs;
 
 use config::Config;
 use getrepolist::request;
+use proccessrepo::Repo;
+use rayon::iter::ParallelIterator;
 
 mod config;
 mod getrepolist;
@@ -14,8 +16,9 @@ fn main() {
     let resp = request(&config).unwrap();
     config.next_page = Some(resp.data.search.page_info.end_cursor);
     fs::write("stats.toml", toml::to_string(&config).unwrap()).unwrap();
-    let repo = &resp.data.search.repos[0];
-    let repo = &repo.repo;
-    let res = proccessrepo::proccess_repo(&config, repo.clone()).unwrap();
+    let repo = resp.data.search.repos;
+    let res = proccessrepo::proccess_reops(&config, repo)
+        .filter_map(|k| k.ok())
+        .collect::<Vec<Repo>>();
     println!("{res:?}")
 }

@@ -1,9 +1,10 @@
 use std::error::Error;
-use std::fs::{self};
+use std::fs;
 use std::io::Read;
 use std::path::Path;
 
 use flate2::read::GzDecoder;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::blocking::Client;
 use reqwest::{Method, header};
 use tar::Archive;
@@ -12,7 +13,7 @@ use tree_sitter::{Parser, Query, QueryCursor, Range, StreamingIterator};
 
 use crate::config::Config;
 
-use crate::repolist::RepoData;
+use crate::repolist::{self, RepoData};
 
 #[derive(Debug)]
 pub struct Repo {
@@ -41,7 +42,20 @@ pub struct QueryInfo {
     query: Query,
     class: u32,
 }
-pub fn proccess_repo(config: &Config, repo: RepoData) -> Result<Repo, Box<dyn Error>> {
+
+pub fn proccess_reops(
+    config: &Config,
+    repos: Vec<repolist::Repo>,
+) -> impl ParallelIterator<Item = Result<Repo, Box<dyn Error + Send + Sync>>> {
+    repos
+        .into_par_iter()
+        .map(|repo| proccess_repo(config, repo.repo))
+}
+
+pub fn proccess_repo(
+    config: &Config,
+    repo: RepoData,
+) -> Result<Repo, Box<dyn Error + Send + Sync>> {
     let path = get_repo(config, &repo)?;
     let mut files = vec![];
     let query = Query::new(
@@ -108,7 +122,7 @@ fn traveserse_and_find(
     }
 }
 
-fn extract_data<R: Read>(data: R) -> Result<TempDir, Box<(dyn Error + 'static)>> {
+fn extract_data<R: Read>(data: R) -> Result<TempDir, Box<(dyn Error + Send + Sync + 'static)>> {
     let path = tempfile::tempdir()?;
     let gz = GzDecoder::new(data);
     let mut archive = Archive::new(gz);
@@ -116,7 +130,7 @@ fn extract_data<R: Read>(data: R) -> Result<TempDir, Box<(dyn Error + 'static)>>
     Ok(path)
 }
 
-fn get_repo(config: &Config, repo: &RepoData) -> Result<TempDir, Box<dyn Error>> {
+fn get_repo(config: &Config, repo: &RepoData) -> Result<TempDir, Box<dyn Error + Send + Sync>> {
     // TODO: we anyway have to traverse the whole repo maybe doesnt make sense to use tarball
     // approach
     let client = Client::new();
