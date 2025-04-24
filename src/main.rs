@@ -2,7 +2,7 @@ use std::fs;
 
 use config::Config;
 use getrepolist::request;
-use proccessrepo::Repo;
+use proccessrepo::{Data, Repo};
 use rayon::iter::ParallelIterator;
 
 mod config;
@@ -20,5 +20,6 @@ fn main() {
     let res = proccessrepo::proccess_reops(&config, repo)
         .filter_map(|k| k.ok())
         .collect::<Vec<Repo>>();
-    println!("{res:?}")
+    let repo = Data { repos: res };
+    println!("{}", serde_json::to_string_pretty(&repo).unwrap())
 }

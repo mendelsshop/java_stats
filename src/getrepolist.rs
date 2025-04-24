@@ -14,7 +14,10 @@ use serde_json::json;
 
 use crate::{config::Config, repolist::GraphQLResponce};
 pub fn request(config: &Config) -> Result<GraphQLResponce, Box<dyn Error>> {
-    let after = config.next_page.as_ref().map_or("null", |x| x);
+    let after = config
+        .next_page
+        .as_ref()
+        .map_or("null".to_string(), |x| format!(r#""{x}""#));
     let query = format!(
         r#"query {{
   search(type: REPOSITORY, query: """

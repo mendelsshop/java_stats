@@ -1,37 +1,70 @@
 use std::error::Error;
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use flate2::read::GzDecoder;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::blocking::Client;
 use reqwest::{Method, header};
+use serde::Serialize;
 use tar::Archive;
 use tempfile::TempDir;
-use tree_sitter::{Parser, Query, QueryCursor, Range, StreamingIterator};
+use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
 use crate::config::Config;
 
 use crate::repolist::{self, RepoData};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+pub struct Data {
+    pub repos: Vec<Repo>,
+}
+#[derive(Debug, Serialize)]
 pub struct Repo {
     data: RepoData,
     files: Vec<File>,
 }
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct File {
     generics_used: Vec<GenericUsage>,
     path: Box<Path>,
+    github_link: String,
 }
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+pub struct Point {
+    pub row: usize,
+    pub column: usize,
+}
+impl From<tree_sitter::Point> for Point {
+    fn from(value: tree_sitter::Point) -> Self {
+        Self {
+            row: value.row,
+            column: value.column,
+        }
+    }
+}
+#[derive(Debug, Serialize)]
+pub struct Range {
+    pub start_point: Point,
+    pub end_point: Point,
+}
+
+impl From<tree_sitter::Range> for Range {
+    fn from(value: tree_sitter::Range) -> Self {
+        Self {
+            start_point: value.start_point.into(),
+            end_point: value.end_point.into(),
+        }
+    }
+}
+#[derive(Debug, Serialize)]
 pub struct GenericUsage {
     name: String,
     range: Range,
     kind: DefintionKind,
 }
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum DefintionKind {
     Class,
     Interface,
@@ -66,7 +99,10 @@ pub fn proccess_repo(
         .capture_index_for_name("generic_class")
         .ok_or("could not find class query")?;
     let query = QueryInfo { query, class };
-    traveserse_and_find(path.path(), path.path(), &query, &mut files);
+    traveserse_and_find(path.path(), path.path(), &query, &mut files, &repo);
+    if files.is_empty() {
+        Err(format!("no results found for {}", repo.name_with_owner))?;
+    }
     Ok(Repo { data: repo, files })
 }
 
@@ -75,8 +111,9 @@ fn traveserse_and_find(
     root_path: &Path,
     query: &QueryInfo,
     generics_used: &mut Vec<File>,
+    repo: &RepoData,
 ) {
-    if path.is_file() {
+    if path.is_file() && path.extension().is_some_and(|ext| ext == "java") {
         let mut parser = Parser::new();
         parser
             .set_language(&tree_sitter_java::LANGUAGE.into())
@@ -99,7 +136,7 @@ fn traveserse_and_find(
                 };
                 usages.push(GenericUsage {
                     name: name.to_string(),
-                    range: class,
+                    range: class.into(),
                     kind: DefintionKind::Class,
                 });
             });
@@ -110,6 +147,11 @@ fn traveserse_and_find(
             generics_used.push(File {
                 generics_used: usages,
                 path: path.to_path_buf().into_boxed_path(),
+                github_link: format!(
+                    "{}{}",
+                    repo.url,
+                    path.components().skip(1).collect::<PathBuf>().display()
+                ),
             });
         }
     } else if path.is_dir() {
@@ -117,7 +159,13 @@ fn traveserse_and_find(
             return;
         };
         for entry in read_dir.flatten() {
-            traveserse_and_find(entry.path().as_path(), root_path, query, generics_used);
+            traveserse_and_find(
+                entry.path().as_path(),
+                root_path,
+                query,
+                generics_used,
+                repo,
+            );
         }
     }
 }
