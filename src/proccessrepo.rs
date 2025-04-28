@@ -63,6 +63,7 @@ pub struct GenericUsage {
     name: String,
     range: Range,
     kind: DefintionKind,
+    generics: String,
 }
 #[derive(Debug, Serialize)]
 pub enum DefintionKind {
@@ -93,7 +94,7 @@ pub fn proccess_repo(
     let mut files = vec![];
     let query = Query::new(
         &tree_sitter_java::LANGUAGE.into(),
-        "(class_declaration (identifier) @name (type_parameters)) @generic_class",
+        "(class_declaration (identifier) @name (type_parameters) @type_params) @generic_class",
     )?;
     let class = query
         .capture_index_for_name("generic_class")
@@ -131,11 +132,73 @@ fn traveserse_and_find(
             .filter(|m| m.nodes_for_capture_index(query.class).any(|_| true))
             .for_each(|m| {
                 let class = m.captures[0].node.range();
-                let Ok(name) = m.captures[1].node.utf8_text(contents.as_bytes()) else {
+                let Ok(generics) = m.captures[2].node.utf8_text(contents.as_bytes()) else {
                     return;
                 };
+                let Some(name) = m.captures[1]
+                    .node
+                    .utf8_text(contents.as_bytes())
+                    .ok()
+                    .filter(|x| {
+                        !x.contains("Listen")
+                            && !x.contains("List")
+                            && !x.contains("Stack")
+                            && !x.contains("Consumer")
+                            && !x.contains("Callback")
+                            && !x.contains("CallBack")
+                            && !x.contains("Entitiy")
+                            && !x.contains("Map")
+                            && !x.contains("Multimap")
+                            && !x.contains("Future")
+                            && !x.contains("Cache")
+                            && !x.contains("Task")
+                            && !x.contains("Array")
+                            && !x.contains("Hash")
+                            && !x.starts_with("Abstract")
+                            && !x.starts_with("Base")
+                            && !x.ends_with("Delegate")
+                            && !x.contains("Function")
+                            && !x.contains("Predicate")
+                            && !x.contains("Supplier")
+                            && !x.contains("Runnable")
+                            && !x.contains("Action")
+                            && !x.contains("Adapter")
+                            && !x.contains("Result")
+                            && !x.contains("Option")
+                            && !x.contains("Maybe")
+                            && !x.contains("LRU")
+                            && !x.contains("Trie")
+                            && !x.contains("Either")
+                            && !x.ends_with("Impl")
+                            && !x.contains("Test")
+                            && !x.contains("Pair")
+                            && !x.contains("Builder")
+                            && !x.contains("Serialization")
+                            && !x.contains("Serializable")
+                            && !x.contains("Tuple")
+                            && !x.contains("Tree")
+                            && !x.contains("Entry")
+                            && !x.contains("Set")
+                            && !x.contains("Queue")
+                            && !x.contains("Dequeue")
+                            && !x.contains("Deque")
+                            && !x.contains("Factory")
+                            && !x.contains("Vector")
+                            && !x.contains("Comparator")
+                            && !x.contains("Observable")
+                            && !x.contains("Iterator")
+                            && !x.contains("Stream")
+                            && !x.contains("Iterable")
+                            && !x.contains("Heap")
+                            && !x.contains("Pool")
+                    })
+                else {
+                    return;
+                };
+
                 usages.push(GenericUsage {
                     name: name.to_string(),
+                    generics: generics.to_string(),
                     range: class.into(),
                     kind: DefintionKind::Class,
                 });
@@ -148,8 +211,9 @@ fn traveserse_and_find(
                 generics_used: usages,
                 path: path.to_path_buf().into_boxed_path(),
                 github_link: format!(
-                    "{}{}",
+                    "{}/tree/{}/{}",
                     repo.url,
+                    repo.default_branch_ref.name,
                     path.components().skip(1).collect::<PathBuf>().display()
                 ),
             });
